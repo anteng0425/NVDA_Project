@@ -40,6 +40,7 @@ nvda_stock_predictor/
     ```bash
     pip install -r requirements.txt
     ```
+    **Note on GPU Support:** The `requirements.txt` file specifies `tensorflow-gpu`. To use GPU acceleration for LSTM training, you must have a compatible NVIDIA GPU, the correct NVIDIA driver, CUDA Toolkit, and cuDNN library installed on your system. Please refer to the official TensorFlow documentation for the specific CUDA/cuDNN versions required for TensorFlow 2.10. If you do not have a compatible GPU or do not wish to install the GPU dependencies, you can modify `requirements.txt` to use `tensorflow-cpu` instead.
 
 ## Data
 

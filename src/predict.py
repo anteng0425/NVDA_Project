@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import sys # Potentially needed if __file__ is not defined in some contexts
 from math import sqrt
 
 # Data Handling & Preprocessing
@@ -64,8 +65,24 @@ warnings.filterwarnings("ignore") # Ignore harmless warnings
 plt.style.use('fivethirtyeight') # Use a common plotting style
 
 # --- Constants ---
-# Path relative to the src directory
-CSV_PATH = '../data/raw/NVDA_stock_data_new.csv'
+# --- Project Path Configuration ---
+# Get the directory of the current script (src/)
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+except NameError:
+    # Fallback for environments where __file__ is not defined (e.g., interactive)
+    script_dir = os.getcwd()
+# Get the project root directory (one level up from src/)
+PROJECT_ROOT = os.path.dirname(script_dir)
+DATA_DIR = os.path.join(PROJECT_ROOT, 'data', 'raw')
+RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results', 'plots')
+
+# Ensure results directory exists
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+
+# --- Constants ---
+CSV_PATH = os.path.join(DATA_DIR, 'NVDA_stock_data_new.csv') # Use absolute path
 CUTOFF_DATE = '2023-03-14'
 TRAIN_VAL_RATIO = 0.8
 TRAIN_RATIO = 0.8
@@ -879,8 +896,10 @@ def plot_loss_curves(history, model_name):
     plt.xlabel('Epoch')
     plt.legend(loc='upper right')
     # Save the plot before showing
-    plot_filename = f'../results/plots/{model_name}_loss_curve.png'
+    plot_filename = os.path.join(RESULTS_DIR, f'{model_name}_loss_curve.png')
     try:
+        # Ensure directory exists (redundant if done at start, but safe)
+        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
         plt.savefig(plot_filename)
         print(f"Loss curve saved to {plot_filename}")
     except Exception as e:
@@ -942,8 +961,10 @@ def plot_predictions(test_series_actual, predictions_dict, title_suffix=""): # C
     plt.xticks(rotation=45)
     plt.tight_layout()
     # Save the plot before showing
-    plot_filename = f'../results/plots/predictions_{title_suffix.lower().replace(" ", "_")}.png'
+    plot_filename = os.path.join(RESULTS_DIR, f'predictions_{title_suffix.lower().replace(" ", "_")}.png')
     try:
+        # Ensure directory exists (redundant if done at start, but safe)
+        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
         plt.savefig(plot_filename)
         print(f"Prediction plot saved to {plot_filename}")
     except Exception as e:
