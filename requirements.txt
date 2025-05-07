@@ -1,0 +1,19 @@
+# Core libraries
+pandas>=1.3.0
+numpy>=1.20.0
+matplotlib>=3.4.0
+
+# Data processing and metrics
+scikit-learn>=1.0.0
+
+# ARIMA models
+statsmodels>=0.13.0
+pmdarima>=1.8.0
+
+# LSTM models (TensorFlow)
+# Specify either tensorflow or tensorflow-cpu
+# tensorflow>=2.8.0  # For GPU support (requires CUDA and cuDNN)
+tensorflow-cpu>=2.8.0 # For CPU only
+
+# Optional: For Markdown output in main script (if uncommented)
+# tabulate>=0.8.9
