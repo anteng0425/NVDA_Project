@@ -244,20 +244,21 @@ def lstm_rolling_forecast(train_val_series, test_series, model, scaler, window_s
                  print(f"Rolling forecast step {t+1}/{len(test_series)} completed.")
 
         # Inverse transform the scaled predictions
-        # Handle potential NaNs before inverse transform if necessary, though scaler should handle them
-        predictions_scaled_array = np.array(predictions_scaled).reshape(-1, 1)
-        # Create a mask for non-NaN values to inverse transform
-        nan_mask = np.isnan(predictions_scaled_array).flatten()
-        valid_predictions_scaled = predictions_scaled_array[~nan_mask]
+        # Handle potential NaNs before inverse transform
+        predictions_scaled_array = np.array(predictions_scaled) # Keep as 1D
+        nan_mask = np.isnan(predictions_scaled_array)
+        valid_predictions_scaled = predictions_scaled_array[~nan_mask].reshape(-1, 1) # Reshape valid data for scaler
 
-        predictions = np.full_like(predictions_scaled_array, np.nan, dtype=float) # Initialize with NaNs
+        # Initialize predictions as a 1D array
+        predictions = np.full(len(test_series), np.nan, dtype=float)
 
         if len(valid_predictions_scaled) > 0:
+             # Inverse transform valid data and assign back using the mask
              predictions[~nan_mask] = scaler.inverse_transform(valid_predictions_scaled).flatten()
 
         print("[LSTM Model] LSTM Rolling Forecast finished.")
         # Return as Pandas Series with the test set index
-        return pd.Series(predictions.flatten(), index=test_series.index)
+        return pd.Series(predictions, index=test_series.index) # Already 1D
 
     except Exception as e:
         print(f"An error occurred during LSTM rolling forecast: {e}")
@@ -323,20 +324,21 @@ def lstm_trajectory_forecast(train_val_series, test_series, model, scaler, windo
 
 
         # Inverse transform the scaled predictions
-        predictions_scaled_array = np.array(predictions_scaled).reshape(-1, 1)
+        predictions_scaled_array = np.array(predictions_scaled) # Keep as 1D
         # Handle potential NaNs before inverse transform
-        nan_mask = np.isnan(predictions_scaled_array).flatten()
-        valid_predictions_scaled = predictions_scaled_array[~nan_mask]
+        nan_mask = np.isnan(predictions_scaled_array)
+        valid_predictions_scaled = predictions_scaled_array[~nan_mask].reshape(-1, 1) # Reshape valid data for scaler
 
-        predictions_array = np.full_like(predictions_scaled_array, np.nan, dtype=float) # Initialize with NaNs
+        # Initialize predictions as a 1D array
+        predictions_array = np.full(len(test_series), np.nan, dtype=float)
 
         if len(valid_predictions_scaled) > 0:
+             # Inverse transform valid data and assign back using the mask
              predictions_array[~nan_mask] = scaler.inverse_transform(valid_predictions_scaled).flatten()
-
 
         print("[LSTM Model] LSTM Trajectory Forecast finished.")
         # Return as Pandas Series with the test set index
-        return pd.Series(predictions_array.flatten(), index=test_series.index)
+        return pd.Series(predictions_array, index=test_series.index) # Already 1D
 
     except Exception as e:
         print(f"An error occurred during LSTM trajectory forecast: {e}")

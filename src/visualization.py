@@ -42,7 +42,7 @@ def plot_loss_curves(history, model_name):
         print(f"Loss curve saved to {plot_filename}")
     except Exception as e:
         print(f"Error saving loss curve plot: {e}")
-    # plt.show() # Comment out plt.show() to avoid blocking execution when run as script
+    plt.show() # Re-enable interactive plot window
 
 def plot_predictions(test_series_actual, predictions_dict, title_suffix=""):
     """Plots actual vs predicted values for multiple models and saves the plot."""
@@ -118,7 +118,7 @@ def plot_predictions(test_series_actual, predictions_dict, title_suffix=""):
         print(f"Prediction plot saved to {plot_filename}")
     except Exception as e:
         print(f"Error saving prediction plot: {e}")
-    # plt.show() # Comment out plt.show() to avoid blocking execution when run as script
+    plt.show() # Re-enable interactive plot window
 
 # Example of direct execution for testing (optional)
 if __name__ == '__main__':
@@ -140,6 +140,30 @@ if __name__ == '__main__':
                 'val_loss': np.linspace(0.8, 0.2, 50) + np.random.rand(50) * 0.05
             }
     dummy_hist = DummyHistory()
-    plot_loss_curves(dummy_hist, "Dummy LSTM")
+def plot_full_history(df, title="Full Adjusted Close Price History"):
+    """Plots the full preprocessed historical data and saves the plot."""
+    if df is None or df.empty or 'adj_close' not in df.columns:
+        print("[Visualization] Error: Invalid DataFrame provided for plotting full history.")
+        return
+
+    print(f"\n[Visualization] Plotting {title}...")
+    plt.figure(figsize=(14, 7))
+    plt.plot(df.index, df['adj_close'], label='Adjusted Close')
+    plt.title(title)
+    plt.xlabel('Date')
+    plt.ylabel('Adjusted Close Price')
+    plt.legend()
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    # Save the plot before showing
+    plot_filename = os.path.join(config.RESULTS_DIR, 'full_history_plot.png')
+    try:
+        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
+        plt.savefig(plot_filename)
+        print(f"Full history plot saved to {plot_filename}")
+    except Exception as e:
+        print(f"Error saving full history plot: {e}")
+    plt.show() # Show interactive plot
 
     print("Visualization tests complete (check saved plots).")

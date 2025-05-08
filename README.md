@@ -6,20 +6,30 @@ This project aims to predict NVIDIA (NVDA) stock prices using various time serie
 
 ```
 nvda_stock_predictor/
-├── data/                     # Data files
-│   ├── raw/                  # Raw data
-│   └── processed/            # Processed data (optional)
-├── docs/                     # Documentation files
-├── notebooks/                # Jupyter notebooks for exploration (optional)
-├── results/                  # Model results (plots, metrics)
-│   ├── plots/
-│   └── metrics/
-├── scripts/                  # Helper scripts (optional)
-├── src/                      # Source code
-│   ├── __init__.py
-│   └── predict.py            # Main prediction script
-├── logs/                     # Log files (optional)
-├── .gitignore                # Git ignore rules
+├── data/
+│   ├── raw/                  # Raw data (e.g., NVDA_stock_data_new.csv)
+│   └── processed/            # (Optional) Processed data
+├── docs/                     # Documentation (e.g., project description MD file)
+├── notebooks/                # (Optional) Jupyter notebooks for exploration
+├── results/
+│   ├── plots/                # Saved plots (loss curves, predictions)
+│   └── metrics/              # (Optional) Saved metrics files
+├── scripts/                  # (Optional) Utility scripts
+├── src/                      # Source code package
+│   ├── __init__.py           # Makes src a package
+│   ├── config.py             # Configuration constants and paths
+│   ├── data_processing.py    # Data loading and splitting functions
+│   ├── evaluation.py         # Model evaluation metric functions
+│   ├── main.py               # Main execution script orchestrating the pipeline
+│   ├── visualization.py      # Plotting functions
+│   └── models/               # Model implementations sub-package
+│       ├── __init__.py       # Makes models a sub-package
+│       ├── arima.py
+│       ├── hybrid.py
+│       ├── lstm.py
+│       └── naive.py
+├── logs/                     # (Optional) Log files
+├── .gitignore                # Files ignored by Git
 ├── README.md                 # This file
 └── requirements.txt          # Python dependencies
 ```
@@ -48,11 +58,16 @@ The raw stock data is expected in the `data/raw/` directory. The primary data fi
 
 ## Usage
 
-To run the main prediction analysis script:
+**Important:** Due to the use of relative imports within the `src` package, the main script should be run as a module from the **project's root directory** (i.e., the directory that contains the `nvda_stock_predictor` package directory).
 
-```bash
-python src/predict.py
-```
+1.  Navigate to the project's root directory in your terminal.
+2.  Run the following command:
+
+    ```bash
+    python -m nvda_stock_predictor.src.main
+    ```
+
+This command tells Python to execute the `main` module located inside the `nvda_stock_predictor.src` package.
 
 The script will:
 - Load and preprocess the data from `data/raw/`.

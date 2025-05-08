@@ -55,10 +55,8 @@ def train_arima(series, order=(1, 1, 1)):
 
         # Proceed only if frequency is set
         # Reverted: trend='c' is incompatible with d=1 in statsmodels ARIMA
-        # If d=0, trend='c' is valid. If d>0, use trend='t' for linear trend equivalent.
-        # For a generic (1,1,1) as requested, we don't add trend here.
-        # If a drift is desired for d=1, it's implicitly handled by the differencing.
-        model = ARIMA(series, order=order) # No trend='c' for d=1
+        # Reverted: Removed trend='t' as per user request to not assume drift.
+        model = ARIMA(series, order=order)
         fitted_model = model.fit()
         print(f"Successfully trained ARIMA{order} model.")
         try:
@@ -99,8 +97,8 @@ def train_auto_arima(series, seasonal=config.AUTO_ARIMA_SEASONAL, **kwargs):
             'stepwise': True,
             'suppress_warnings': True,
             'error_action': 'ignore',
-            'trace': config.AUTO_ARIMA_TRACE,
-            'with_intercept': True # Add intercept (drift) term search
+            'trace': config.AUTO_ARIMA_TRACE
+            # Reverted: Removed 'with_intercept': True as per user request
         }
         # Update default kwargs with any user-provided kwargs
         default_kwargs.update(kwargs)

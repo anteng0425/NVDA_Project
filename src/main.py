@@ -16,7 +16,7 @@ try:
     from . import config
     from .data_processing import load_and_preprocess_data, split_data
     from .evaluation import evaluate_performance
-    from .visualization import plot_loss_curves, plot_predictions
+    from .visualization import plot_loss_curves, plot_predictions, plot_full_history # Import new function
     from .models import naive, arima, lstm, hybrid # Import model modules
     from .models.lstm import TF_AVAILABLE # Check TF availability
 except ImportError:
@@ -47,7 +47,10 @@ if __name__ == "__main__":
     df = load_and_preprocess_data()
     if df is None:
         print("Failed to load/preprocess data. Exiting.")
-        exit()
+        exit() # Correct indentation for exit()
+
+    # --- Plot Full Historical Data ---
+    plot_full_history(df) # Call the new plotting function
 
     # 2. Split Data
     print("\n[Step 2/7] Splitting Data...")
