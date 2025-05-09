@@ -16,10 +16,12 @@ except NameError:
 # Get the project root directory (one level up from src/)
 PROJECT_ROOT = os.path.dirname(script_dir)
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data', 'raw')
-RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results', 'plots')
+RESULTS_PLOTS_DIR = os.path.join(PROJECT_ROOT, 'results', 'plots') # Renamed for clarity
+LOGS_DIR = os.path.join(PROJECT_ROOT, 'logs', 'tensorboard') # Base directory for TensorBoard logs
 
-# Ensure results directory exists
-os.makedirs(RESULTS_DIR, exist_ok=True)
+# Ensure directories exist
+os.makedirs(RESULTS_PLOTS_DIR, exist_ok=True)
+os.makedirs(LOGS_DIR, exist_ok=True)
 
 
 # --- Data Constants ---
@@ -28,15 +30,27 @@ CUTOFF_DATE = '2023-03-14'
 TRAIN_VAL_RATIO = 0.8
 TRAIN_RATIO = 0.8
 
-# --- LSTM Model Hyperparameters ---
-LSTM_WINDOW_SIZE = 20
-LSTM_EPOCHS = 300 # As per documentation, though might be long
-LSTM_BATCH_SIZE = 128
-LSTM_PATIENCE = 30
-LSTM_UNITS_1 = 32
-LSTM_UNITS_2 = 16
-LSTM_DENSE_UNITS = 16
-LSTM_DROPOUT_RATE = 0.2
+# --- LSTM Model Hyperparameters (Shared) ---
+LSTM_WINDOW_SIZE = 60 # Increased window size
+LSTM_DROPOUT_RATE = 0.3 # Increased dropout rate
+
+# --- Pure LSTM Specific Hyperparameters ---
+PURE_LSTM_EPOCHS = 300 # Increased epochs
+PURE_LSTM_BATCH_SIZE = 32 # Halved batch size again
+PURE_LSTM_PATIENCE = 150 # Increased patience
+PURE_LSTM_UNITS_1 = 64 # Increased units in first LSTM layer
+PURE_LSTM_UNITS_2 = 32 # Increased units in second LSTM layer
+PURE_LSTM_DENSE_UNITS = 32 # Increased units in Dense layer
+# Pure LSTM will use tanh activation and recurrent dropout (handled in model creation)
+
+# --- Hybrid (Residual) LSTM Specific Hyperparameters ---
+HYBRID_LSTM_EPOCHS = 300 # Original value
+HYBRID_LSTM_BATCH_SIZE = 128 # Original value
+HYBRID_LSTM_PATIENCE = 30 # Original value
+HYBRID_LSTM_UNITS_1 = 32 # Original value
+HYBRID_LSTM_UNITS_2 = 16 # Original value
+HYBRID_LSTM_DENSE_UNITS = 16 # Original value
+# Hybrid LSTM will use relu activation and standard dropout (handled in model creation)
 
 # --- Auto ARIMA Parameters ---
 AUTO_ARIMA_START_P = 0

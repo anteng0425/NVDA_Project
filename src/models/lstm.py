@@ -12,11 +12,13 @@ import warnings
 try:
     import tensorflow as tf
     from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
-    from tensorflow.keras.callbacks import EarlyStopping
+    from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, Bidirectional
+    from tensorflow.keras.callbacks import EarlyStopping, TensorBoard # Import TensorBoard
     from tensorflow.keras.optimizers import Adam
+    import datetime # Import datetime for log directories
+    import os # Import os for path joining
     TF_AVAILABLE = True
-    # GPU Memory Growth (moved here from main script for encapsulation)
+    # GPU Memory Growth
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:
@@ -65,71 +67,97 @@ def build_lstm_sequences(data, window_size=config.LSTM_WINDOW_SIZE):
         y.append(data[i + window_size])
     return np.array(X), np.array(y)
 
-def create_lstm_model(window_size=config.LSTM_WINDOW_SIZE,
-                      lstm1_units=config.LSTM_UNITS_1,
-                      lstm2_units=config.LSTM_UNITS_2,
-                      dense_units=config.LSTM_DENSE_UNITS,
-                      dropout_rate=config.LSTM_DROPOUT_RATE,
-                      n_features=1):
+def create_lstm_model(window_size, lstm1_units, lstm2_units, dense_units, dropout_rate,
+                      activation='tanh', use_recurrent_dropout=True, bidirectional=False, n_features=1):
     """
-    Creates the LSTM model architecture as specified.
+    Creates the LSTM or Bi-LSTM model architecture based on provided parameters.
 
     Args:
-        window_size (int): Input sequence length. Defaults to config.LSTM_WINDOW_SIZE.
-        lstm1_units (int): Units in the first LSTM layer. Defaults to config.LSTM_UNITS_1.
-        lstm2_units (int): Units in the second LSTM layer. Defaults to config.LSTM_UNITS_2.
-        dense_units (int): Units in the intermediate Dense layer. Defaults to config.LSTM_DENSE_UNITS.
-        dropout_rate (float): Dropout rate. Defaults to config.LSTM_DROPOUT_RATE.
+        window_size (int): Input sequence length.
+        lstm1_units (int): Units in the first LSTM layer.
+        lstm2_units (int): Units in the second LSTM layer.
+        dense_units (int): Units in the intermediate Dense layer.
+        dropout_rate (float): Dropout rate.
+        activation (str): Activation function for LSTM layers ('tanh' or 'relu'). Defaults to 'tanh'.
+        use_recurrent_dropout (bool): If True, use recurrent_dropout in LSTM layers.
+                                      If False, use standalone Dropout layers after LSTM layers. Defaults to True.
+        bidirectional (bool): If True, use Bidirectional LSTM layers. Defaults to False.
         n_features (int): Number of input features (usually 1 for univariate). Defaults to 1.
 
     Returns:
-        tf.keras.models.Sequential or None: The compiled Keras LSTM model, or None if TensorFlow not available.
+        tf.keras.models.Sequential or None: The compiled Keras model, or None if TensorFlow not available.
     """
     if not TF_AVAILABLE:
         print("[LSTM Model] Error: tensorflow is not installed. Cannot create LSTM model.")
         return None
 
-    print("\n[LSTM Model] Creating LSTM Model Architecture...")
+    model_type = "Bi-LSTM" if bidirectional else "LSTM"
+    print(f"\n[LSTM Model] Creating {model_type} Model Architecture (Activation: {activation}, Recurrent Dropout: {use_recurrent_dropout})...")
     model = Sequential()
     model.add(Input(shape=(window_size, n_features)))
-    # Using relu as per original spec, though tanh might be common
-    model.add(LSTM(lstm1_units, return_sequences=True, activation='relu'))
-    model.add(Dropout(dropout_rate))
-    model.add(LSTM(lstm2_units, return_sequences=False, activation='relu'))
-    model.add(Dropout(dropout_rate))
-    model.add(Dense(dense_units, activation='relu'))
+
+    # First LSTM/Bi-LSTM Layer
+    lstm1 = LSTM(lstm1_units, return_sequences=True, activation=activation, recurrent_dropout=dropout_rate if use_recurrent_dropout else 0.0)
+    if bidirectional:
+        model.add(Bidirectional(lstm1)) # return_sequences=True is implicit from inner LSTM
+    else:
+        model.add(lstm1)
+    if not use_recurrent_dropout and not bidirectional: # Standalone dropout only makes sense for unidirectional here
+         model.add(Dropout(dropout_rate))
+
+    # Second LSTM/Bi-LSTM Layer
+    # IMPORTANT: return_sequences=False for the last recurrent layer before Dense
+    lstm2 = LSTM(lstm2_units, return_sequences=False, activation=activation, recurrent_dropout=dropout_rate if use_recurrent_dropout else 0.0)
+    if bidirectional:
+        model.add(Bidirectional(lstm2)) # return_sequences=False is implicit
+    else:
+        model.add(lstm2)
+    if not use_recurrent_dropout and not bidirectional:
+         model.add(Dropout(dropout_rate))
+
+    # Dense Layers
+    model.add(Dense(dense_units, activation='sigmoid')) # Changed Dense layer activation to sigmoid
     model.add(Dense(1)) # Output layer
 
-    optimizer = Adam()
+    optimizer = Adam() # Consider adding learning_rate parameter here if needed later
     model.compile(optimizer=optimizer, loss='mean_squared_error')
     print("LSTM Model Architecture Summary:")
     model.summary()
     return model
 
 def train_lstm(train_series, val_series,
-               window_size=config.LSTM_WINDOW_SIZE,
-               epochs=config.LSTM_EPOCHS,
-               batch_size=config.LSTM_BATCH_SIZE,
-               patience=config.LSTM_PATIENCE,
-               lstm_units_1=config.LSTM_UNITS_1,
-               lstm_units_2=config.LSTM_UNITS_2,
-               dense_units=config.LSTM_DENSE_UNITS,
-               dropout_rate=config.LSTM_DROPOUT_RATE):
+               # Explicitly list all parameters, remove defaults linking to config
+               window_size,
+               epochs,
+               batch_size,
+               patience,
+               lstm_units_1,
+               lstm_units_2,
+               dense_units,
+               dropout_rate,
+               activation='tanh', # Default activation for LSTM layers
+               use_recurrent_dropout=True, # Default dropout style
+               bidirectional=False, # Default model type
+               model_name="LSTM_Run"): # Added model_name for logging
     """
-    Trains the LSTM model. Includes scaling, sequence building, training with early stopping.
-    Can be used for Pure LSTM (on prices) or Hybrid LSTM (on residuals).
+    Trains the LSTM or Bi-LSTM model. Includes scaling, sequence building, training with early stopping,
+    and TensorBoard logging. Accepts specific hyperparameters.
 
     Args:
         train_series (pd.Series): Training time series data (prices or residuals).
         val_series (pd.Series): Validation time series data (prices or residuals).
-        window_size (int): Input sequence length. Defaults to config.LSTM_WINDOW_SIZE.
-        epochs (int): Max number of training epochs. Defaults to config.LSTM_EPOCHS.
-        batch_size (int): Training batch size. Defaults to config.LSTM_BATCH_SIZE.
-        patience (int): Early stopping patience. Defaults to config.LSTM_PATIENCE.
-        lstm_units_1 (int): Units in the first LSTM layer. Defaults to config.LSTM_UNITS_1.
-        lstm_units_2 (int): Units in the second LSTM layer. Defaults to config.LSTM_UNITS_2.
-        dense_units (int): Units in the intermediate Dense layer. Defaults to config.LSTM_DENSE_UNITS.
-        dropout_rate (float): Dropout rate. Defaults to config.LSTM_DROPOUT_RATE.
+        window_size (int): Input sequence length.
+        epochs (int): Max number of training epochs.
+        batch_size (int): Training batch size.
+        patience (int): Early stopping patience.
+        lstm_units_1 (int): Units in the first LSTM layer.
+        lstm_units_2 (int): Units in the second LSTM layer.
+        dense_units (int): Units in the intermediate Dense layer.
+        dropout_rate (float): Dropout rate.
+        activation (str): Activation function for LSTM layers ('tanh' or 'relu').
+        use_recurrent_dropout (bool): Whether to use recurrent_dropout or standalone Dropout layers.
+        bidirectional (bool): Whether to create a Bidirectional LSTM model.
+        model_name (str): A name for this training run, used for TensorBoard log directory.
 
     Returns:
         tuple: (model, scaler, history) or (None, None, None) if training fails or TF not available.
@@ -141,7 +169,7 @@ def train_lstm(train_series, val_series,
         print("[LSTM Model] Error: tensorflow is not installed. Cannot train LSTM model.")
         return None, None, None
 
-    print("\n[LSTM Model] Starting LSTM training process...")
+    print(f"\n[LSTM Model] Starting LSTM training process (Epochs: {epochs}, Patience: {patience}, Batch: {batch_size})...")
     try:
         # Ensure Series have values attribute and correct shape for scaler
         train_vals = train_series.values.reshape(-1, 1)
@@ -165,17 +193,42 @@ def train_lstm(train_series, val_series,
         X_val = X_val.reshape((X_val.shape[0], X_val.shape[1], 1))
         print(f"LSTM Input shapes: X_train={X_train.shape}, y_train={y_train.shape}, X_val={X_val.shape}, y_val={y_val.shape}")
 
-        model = create_lstm_model(window_size, lstm_units_1, lstm_units_2, dense_units, dropout_rate)
+        # Pass specific parameters to create_lstm_model
+        model = create_lstm_model(
+            window_size=window_size,
+            lstm1_units=lstm_units_1,
+            lstm2_units=lstm_units_2,
+            dense_units=dense_units,
+            dropout_rate=dropout_rate,
+            activation=activation,
+            use_recurrent_dropout=use_recurrent_dropout,
+            bidirectional=bidirectional # Pass bidirectional flag
+        )
         if model is None: return None, None, None
+
+        # --- TensorBoard Setup ---
+        # Create a unique log directory for this run
+        run_log_dir = os.path.join(config.LOGS_DIR, f"{model_name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}")
+        print(f"[TensorBoard] Logging to: {run_log_dir}")
+        tensorboard_callback = TensorBoard(
+            log_dir=run_log_dir,
+            histogram_freq=1,      # Log histograms every epoch
+            write_graph=True,      # Log the model graph
+            write_images=False,    # We don't have images to log
+            update_freq='epoch',   # Log metrics every epoch
+            profile_batch=0        # Disable profiler for now (can enable later if needed)
+        )
+        # --- End TensorBoard Setup ---
 
         early_stopping = EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True, verbose=1)
 
         print("Starting Keras model fitting...")
+        # Add tensorboard_callback to the list of callbacks
         history = model.fit(X_train, y_train,
                           epochs=epochs,
                           batch_size=batch_size,
                           validation_data=(X_val, y_val),
-                          callbacks=[early_stopping],
+                          callbacks=[early_stopping, tensorboard_callback], # Added TensorBoard callback
                           verbose=1) # Set verbose=1 to see progress
 
         print("[LSTM Model] LSTM training finished.")

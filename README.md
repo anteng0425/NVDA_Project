@@ -28,7 +28,8 @@ nvda_stock_predictor/
 │       ├── hybrid.py
 │       ├── lstm.py
 │       └── naive.py
-├── logs/                     # (Optional) Log files
+├── logs/                     # Log files (e.g., for TensorBoard)
+│   └── tensorboard/          # TensorBoard specific log files (organized by run)
 ├── .gitignore                # Files ignored by Git
 ├── README.md                 # This file
 └── requirements.txt          # Python dependencies
@@ -72,24 +73,46 @@ This command tells Python to execute the `main` module located inside the `nvda_
 The script will:
 - Load and preprocess the data from `data/raw/`.
 - Split the data into training, validation, and test sets.
-- Train Naive, ARIMA(1,1,1), Auto ARIMA, Pure LSTM, and Hybrid models.
+- Train Naive, ARIMA(1,1,1), Auto ARIMA, Pure Bi-LSTM (Pure LSTM now uses a Bidirectional architecture), and Hybrid models.
 - Perform rolling and trajectory forecasts on the test set.
 - Evaluate models using RMSE, MAPE, ACC, and R2 metrics.
-- Save prediction plots to `results/plots/`.
+- Save prediction plots (with improved line styles) to `results/plots/`.
 - Print evaluation metrics to the console.
+- Log detailed LSTM training metrics, model graphs, and histograms to TensorBoard.
+
+## TensorBoard Integration
+
+TensorBoard is integrated with the LSTM training process (both Pure Bi-LSTM and the LSTM components of Hybrid models) to provide detailed visualizations.
+
+**To use TensorBoard:**
+
+1.  While the main script is running or after it completes, open a **new terminal**.
+2.  Navigate to the `nvda_stock_predictor` directory (i.e., `cd path/to/your/NVDA_Project/nvda_stock_predictor`).
+3.  Run the TensorBoard command:
+    ```bash
+    tensorboard --logdir logs/tensorboard
+    ```
+4.  Open the URL provided by TensorBoard (usually `http://localhost:6006/`) in your web browser.
+
+You can then explore:
+*   **Scalars:** Training/validation loss for each LSTM model.
+*   **Graphs:** The architecture of the Keras models.
+*   **Distributions & Histograms:** Weight and activation distributions over training epochs.
+
+Logs are organized by model name (e.g., `Pure_BiLSTM`, `Hybrid_ARIMA(1,1,1)+LSTM_Residual`) and timestamp within the `nvda_stock_predictor/logs/tensorboard/` directory.
 
 ## Models Compared
 
 - Naive Forecast
 - ARIMA(1,1,1)
 - Auto ARIMA
-- Pure LSTM
+- Pure Bi-LSTM
 - Hybrid ARIMA(1,1,1) + LSTM
 - Hybrid Auto ARIMA + LSTM
 
 ## Results
 
-Model evaluation metrics are printed to the console upon script completion. Plots comparing actual vs. predicted values for rolling and trajectory forecasts are saved in the `results/plots/` directory.
+Model evaluation metrics are printed to the console upon script completion. Plots comparing actual vs. predicted values for rolling and trajectory forecasts are saved in the `results/plots/` directory. LSTM training progress can be monitored using TensorBoard as described above.
 
 *(Add more details about specific findings or conclusions here)*
 

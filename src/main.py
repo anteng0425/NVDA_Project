@@ -39,7 +39,7 @@ warnings.filterwarnings("ignore") # Ignore harmless warnings
 if __name__ == "__main__":
     print("--- NVDA Prediction Analysis Start ---")
     # Ensure results directory exists (done in config.py, but safe to re-check)
-    os.makedirs(config.RESULTS_DIR, exist_ok=True)
+    os.makedirs(config.RESULTS_PLOTS_DIR, exist_ok=True) # Use updated variable name
 
     # 1. Load and Preprocess Data
     print("\n[Step 1/7] Loading and Preprocessing Data...")
@@ -60,13 +60,29 @@ if __name__ == "__main__":
         print("Failed to split data. Exiting.")
         exit()
 
-    # Prepare series for models (use adj_close) - these will now have DatetimeIndex
-    train_series = train_df['adj_close']
-    val_series = val_df['adj_close']
-    test_series = test_df['adj_close']
-    train_val_series = train_val_df['adj_close']
+    # Prepare series for models - Create both original and log-transformed versions
+    print("\n[Data Prep] Preparing original and log-transformed series...")
 
-    # Store results
+    # Original scale series (for Pure LSTM, evaluation, plotting)
+    train_series_orig = train_df['adj_close'].copy()
+    val_series_orig = val_df['adj_close'].copy()
+    test_series_orig = test_df['adj_close'].copy() # Used for y_true in evaluation/plotting
+    train_val_series_orig = train_val_df['adj_close'].copy()
+    print(f"[Data Prep] Original test_series mean: {test_series_orig.mean():.2f}")
+
+    # Log-transformed series (for Naive, ARIMA, Hybrid models)
+    # Handle potential non-positive values before log transform if necessary
+    if (train_series_orig <= 0).any() or (val_series_orig <= 0).any() or (test_series_orig <= 0).any() or (train_val_series_orig <= 0).any():
+        print("Error: Non-positive values detected in 'adj_close' before log transform. Cannot proceed.")
+        exit()
+    train_series_log = np.log(train_series_orig)
+    val_series_log = np.log(val_series_orig)
+    test_series_log = np.log(test_series_orig) # Log version for model prediction structure (index/length)
+    train_val_series_log = np.log(train_val_series_orig)
+    print(f"[Data Prep] Log-transformed train_series mean: {train_series_log.mean():.2f}")
+
+
+    # Store results - predictions will be stored in original scale
     results = {
         'Rolling': {'Predictions': {}, 'Metrics': {}},
         'Trajectory': {'Predictions': {}, 'Metrics': {}}
@@ -80,14 +96,17 @@ if __name__ == "__main__":
     print("\n[Step 3/7] Running Naive Forecast...")
     model_name_naive = "Naive Forecast"
     try:
-        naive_preds_rolling = naive.naive_forecast_rolling(test_series)
-        results['Rolling']['Predictions'][model_name_naive] = naive_preds_rolling
-        metrics_rolling_naive = evaluate_performance(f"{model_name_naive} (Rolling)", test_series.values, naive_preds_rolling.values if naive_preds_rolling is not None else None)
+        # Naive models operate on the log-transformed series, predictions are exponentiated
+        naive_preds_rolling_log = naive.naive_forecast_rolling(test_series_log)
+        naive_preds_rolling_final = np.exp(naive_preds_rolling_log) if naive_preds_rolling_log is not None else None
+        results['Rolling']['Predictions'][model_name_naive] = naive_preds_rolling_final
+        metrics_rolling_naive = evaluate_performance(f"{model_name_naive} (Rolling)", test_series_orig.values, naive_preds_rolling_final.values if naive_preds_rolling_final is not None else None)
         results['Rolling']['Metrics'][model_name_naive] = metrics_rolling_naive
 
-        naive_preds_trajectory = naive.naive_forecast_trajectory(train_val_series, test_series)
-        results['Trajectory']['Predictions'][model_name_naive] = naive_preds_trajectory
-        metrics_trajectory_naive = evaluate_performance(f"{model_name_naive} (Trajectory)", test_series.values, naive_preds_trajectory.values if naive_preds_trajectory is not None else None)
+        naive_preds_trajectory_log = naive.naive_forecast_trajectory(train_val_series_log, test_series_log)
+        naive_preds_trajectory_final = np.exp(naive_preds_trajectory_log) if naive_preds_trajectory_log is not None else None
+        results['Trajectory']['Predictions'][model_name_naive] = naive_preds_trajectory_final
+        metrics_trajectory_naive = evaluate_performance(f"{model_name_naive} (Trajectory)", test_series_orig.values, naive_preds_trajectory_final.values if naive_preds_trajectory_final is not None else None)
         results['Trajectory']['Metrics'][model_name_naive] = metrics_trajectory_naive
     except Exception as e:
         print(f"Error during Naive Forecast: {e}")
@@ -100,26 +119,28 @@ if __name__ == "__main__":
     model_name_arima111 = "ARIMA(1,1,1)"
     arima111_model = None # Initialize
     try:
-        # Ensure train_val_series has frequency for statsmodels (handled in data_processing)
-        arima111_model = arima.train_arima(train_val_series, order=(1, 1, 1))
+        # ARIMA models operate on the log-transformed series, predictions are exponentiated
+        arima111_model = arima.train_arima(train_val_series_log, order=(1, 1, 1))
 
         if arima111_model:
             trained_models[model_name_arima111] = arima111_model
             # Rolling Forecast
-            arima111_preds_rolling = arima.arima_rolling_forecast(train_val_series, test_series, arima111_model)
-            if arima111_preds_rolling is not None:
-                results['Rolling']['Predictions'][model_name_arima111] = arima111_preds_rolling
-                metrics_rolling = evaluate_performance(f"{model_name_arima111} (Rolling)", test_series.values, arima111_preds_rolling.values)
+            arima111_preds_rolling_log = arima.arima_rolling_forecast(train_val_series_log, test_series_log, arima111_model)
+            arima111_preds_rolling_final = np.exp(arima111_preds_rolling_log) if arima111_preds_rolling_log is not None else None
+            if arima111_preds_rolling_final is not None:
+                results['Rolling']['Predictions'][model_name_arima111] = arima111_preds_rolling_final
+                metrics_rolling = evaluate_performance(f"{model_name_arima111} (Rolling)", test_series_orig.values, arima111_preds_rolling_final.values)
                 results['Rolling']['Metrics'][model_name_arima111] = metrics_rolling
             else:
                 print(f"{model_name_arima111} Rolling Forecast failed.")
                 results['Rolling']['Metrics'][model_name_arima111] = {k: np.nan for k in ["RMSE", "MAPE", "ACC", "R2"]}
 
             # Trajectory Forecast
-            arima111_preds_trajectory = arima.arima_trajectory_forecast(train_val_series, test_series, arima111_model)
-            if arima111_preds_trajectory is not None:
-                results['Trajectory']['Predictions'][model_name_arima111] = arima111_preds_trajectory
-                metrics_trajectory = evaluate_performance(f"{model_name_arima111} (Trajectory)", test_series.values, arima111_preds_trajectory.values)
+            arima111_preds_trajectory_log = arima.arima_trajectory_forecast(train_val_series_log, test_series_log, arima111_model)
+            arima111_preds_trajectory_final = np.exp(arima111_preds_trajectory_log) if arima111_preds_trajectory_log is not None else None
+            if arima111_preds_trajectory_final is not None:
+                results['Trajectory']['Predictions'][model_name_arima111] = arima111_preds_trajectory_final
+                metrics_trajectory = evaluate_performance(f"{model_name_arima111} (Trajectory)", test_series_orig.values, arima111_preds_trajectory_final.values)
                 results['Trajectory']['Metrics'][model_name_arima111] = metrics_trajectory
             else:
                 print(f"{model_name_arima111} Trajectory Forecast failed.")
@@ -140,19 +161,20 @@ if __name__ == "__main__":
     model_name_auto_arima = "Auto ARIMA"
     auto_arima_model = None # Initialize
     try:
-        # Uses parameters from config module
-        auto_arima_model = arima.train_auto_arima(train_val_series)
+        # Auto ARIMA operates on the log-transformed series, predictions are exponentiated
+        auto_arima_model = arima.train_auto_arima(train_val_series_log)
 
         if auto_arima_model:
             trained_models[model_name_auto_arima] = auto_arima_model
             # Need a fresh model for rolling forecast as pmdarima update() modifies in-place
-            auto_arima_model_for_rolling = arima.train_auto_arima(train_val_series) # Retrain
+            auto_arima_model_for_rolling = arima.train_auto_arima(train_val_series_log) # Retrain
 
             if auto_arima_model_for_rolling:
-                auto_arima_preds_rolling = arima.arima_rolling_forecast(train_val_series, test_series, auto_arima_model_for_rolling)
-                if auto_arima_preds_rolling is not None:
-                    results['Rolling']['Predictions'][model_name_auto_arima] = auto_arima_preds_rolling
-                    metrics_rolling = evaluate_performance(f"{model_name_auto_arima} (Rolling)", test_series.values, auto_arima_preds_rolling.values)
+                auto_arima_preds_rolling_log = arima.arima_rolling_forecast(train_val_series_log, test_series_log, auto_arima_model_for_rolling)
+                auto_arima_preds_rolling_final = np.exp(auto_arima_preds_rolling_log) if auto_arima_preds_rolling_log is not None else None
+                if auto_arima_preds_rolling_final is not None:
+                    results['Rolling']['Predictions'][model_name_auto_arima] = auto_arima_preds_rolling_final
+                    metrics_rolling = evaluate_performance(f"{model_name_auto_arima} (Rolling)", test_series_orig.values, auto_arima_preds_rolling_final.values)
                     results['Rolling']['Metrics'][model_name_auto_arima] = metrics_rolling
                 else:
                     print(f"{model_name_auto_arima} Rolling Forecast failed.")
@@ -162,10 +184,11 @@ if __name__ == "__main__":
                  results['Rolling']['Metrics'][model_name_auto_arima] = {k: np.nan for k in ["RMSE", "MAPE", "ACC", "R2"]}
 
             # Trajectory Forecast (use original trained model)
-            auto_arima_preds_trajectory = arima.arima_trajectory_forecast(train_val_series, test_series, auto_arima_model)
-            if auto_arima_preds_trajectory is not None:
-                results['Trajectory']['Predictions'][model_name_auto_arima] = auto_arima_preds_trajectory
-                metrics_trajectory = evaluate_performance(f"{model_name_auto_arima} (Trajectory)", test_series.values, auto_arima_preds_trajectory.values)
+            auto_arima_preds_trajectory_log = arima.arima_trajectory_forecast(train_val_series_log, test_series_log, auto_arima_model)
+            auto_arima_preds_trajectory_final = np.exp(auto_arima_preds_trajectory_log) if auto_arima_preds_trajectory_log is not None else None
+            if auto_arima_preds_trajectory_final is not None:
+                results['Trajectory']['Predictions'][model_name_auto_arima] = auto_arima_preds_trajectory_final
+                metrics_trajectory = evaluate_performance(f"{model_name_auto_arima} (Trajectory)", test_series_orig.values, auto_arima_preds_trajectory_final.values)
                 results['Trajectory']['Metrics'][model_name_auto_arima] = metrics_trajectory
             else:
                 print(f"{model_name_auto_arima} Trajectory Forecast failed.")
@@ -191,30 +214,48 @@ if __name__ == "__main__":
             results['Rolling']['Metrics'][model_name_lstm] = {k: np.nan for k in ["RMSE", "MAPE", "ACC", "R2"]}
             results['Trajectory']['Metrics'][model_name_lstm] = {k: np.nan for k in ["RMSE", "MAPE", "ACC", "R2"]}
         else:
-            # Uses hyperparameters from config module
+            # Pure LSTM operates directly on original prices
+            # The scaler inside train_lstm will be fitted on original price data.
+            # Predictions from lstm_..._forecast will be on original scale.
             lstm_model, lstm_scaler, lstm_history = lstm.train_lstm(
-                train_series, val_series # Pass prices directly
+                train_series=train_series_orig, # Pass original prices
+                val_series=val_series_orig,
+                # Pass Pure LSTM specific parameters from config
+                window_size=config.LSTM_WINDOW_SIZE,
+                epochs=config.PURE_LSTM_EPOCHS,
+                batch_size=config.PURE_LSTM_BATCH_SIZE, # Now 128 again
+                patience=config.PURE_LSTM_PATIENCE,
+                lstm_units_1=config.PURE_LSTM_UNITS_1,
+                lstm_units_2=config.PURE_LSTM_UNITS_2,
+                dense_units=config.PURE_LSTM_DENSE_UNITS,
+                dropout_rate=config.LSTM_DROPOUT_RATE,
+                activation='tanh', # Explicitly set for Pure LSTM
+                use_recurrent_dropout=True, # Explicitly set for Pure LSTM
+                bidirectional=True, # Use Bi-LSTM for Pure model
+                model_name="Pure_BiLSTM" # Added model name for logging
             )
 
             if lstm_model and lstm_scaler: # Check if training was successful
-                trained_models[model_name_lstm] = {'model': lstm_model, 'scaler': lstm_scaler}
-                if lstm_history: plot_loss_curves(lstm_history, model_name_lstm)
+                trained_models[model_name_lstm] = {'model': lstm_model, 'scaler': lstm_scaler} # Scaler is for original prices
+                if lstm_history: plot_loss_curves(lstm_history, model_name_lstm) # Loss is on scaled original prices
 
-                # Rolling Forecast
-                lstm_preds_rolling = lstm.lstm_rolling_forecast(train_val_series, test_series, lstm_model, lstm_scaler)
-                if lstm_preds_rolling is not None:
-                    results['Rolling']['Predictions'][model_name_lstm] = lstm_preds_rolling
-                    metrics_rolling = evaluate_performance(f"{model_name_lstm} (Rolling)", test_series.values, lstm_preds_rolling.values)
+                # Rolling Forecast - Pass original series, result is original scale
+                lstm_preds_rolling_final = lstm.lstm_rolling_forecast(train_val_series_orig, test_series_orig, lstm_model, lstm_scaler)
+                # NO np.exp() needed
+                if lstm_preds_rolling_final is not None:
+                    results['Rolling']['Predictions'][model_name_lstm] = lstm_preds_rolling_final
+                    metrics_rolling = evaluate_performance(f"{model_name_lstm} (Rolling)", test_series_orig.values, lstm_preds_rolling_final.values)
                     results['Rolling']['Metrics'][model_name_lstm] = metrics_rolling
                 else:
                     print(f"{model_name_lstm} Rolling Forecast failed.")
                     results['Rolling']['Metrics'][model_name_lstm] = {k: np.nan for k in ["RMSE", "MAPE", "ACC", "R2"]}
 
-                # Trajectory Forecast
-                lstm_preds_trajectory = lstm.lstm_trajectory_forecast(train_val_series, test_series, lstm_model, lstm_scaler)
-                if lstm_preds_trajectory is not None:
-                    results['Trajectory']['Predictions'][model_name_lstm] = lstm_preds_trajectory
-                    metrics_trajectory = evaluate_performance(f"{model_name_lstm} (Trajectory)", test_series.values, lstm_preds_trajectory.values)
+                # Trajectory Forecast - Pass original series, result is original scale
+                lstm_preds_trajectory_final = lstm.lstm_trajectory_forecast(train_val_series_orig, test_series_orig, lstm_model, lstm_scaler)
+                # NO np.exp() needed
+                if lstm_preds_trajectory_final is not None:
+                    results['Trajectory']['Predictions'][model_name_lstm] = lstm_preds_trajectory_final
+                    metrics_trajectory = evaluate_performance(f"{model_name_lstm} (Trajectory)", test_series_orig.values, lstm_preds_trajectory_final.values)
                     results['Trajectory']['Metrics'][model_name_lstm] = metrics_trajectory
                 else:
                     print(f"{model_name_lstm} Trajectory Forecast failed.")
@@ -249,45 +290,62 @@ if __name__ == "__main__":
             if model_name_arima111 in trained_models:
                 base_arima_model_111 = trained_models[model_name_arima111]
                 # Need a fresh model instance for rolling forecast if using statsmodels extend
-                # Retrain ARIMA(1,1,1) specifically for rolling hybrid
-                arima_model_for_hybrid_rolling_111 = arima.train_arima(train_val_series, order=(1, 1, 1))
+                # Retrain ARIMA(1,1,1) specifically for rolling hybrid on log-transformed data
+                arima_model_for_hybrid_rolling_111 = arima.train_arima(train_val_series_log, order=(1, 1, 1))
 
                 if arima_model_for_hybrid_rolling_111: # Check if retraining for rolling worked
-                    residuals_111 = arima.calculate_arima_residuals(train_val_series, base_arima_model_111)
+                    # Residuals are calculated on log-transformed data
+                    residuals_111_log = arima.calculate_arima_residuals(train_val_series_log, base_arima_model_111) # base_arima_model_111 was trained on log data
 
-                    if residuals_111 is not None:
-                        # Align residuals index with train_val_series for splitting
-                        residuals_111 = residuals_111.reindex(train_val_series.index).dropna()
-                        # Split residuals based on train/val split indices
-                        train_residuals_111 = residuals_111.loc[train_series.index].dropna()
-                        val_residuals_111 = residuals_111.loc[val_series.index].dropna()
+                    if residuals_111_log is not None:
+                        # Align residuals index with train_val_series_log for splitting
+                        residuals_111_log = residuals_111_log.reindex(train_val_series_log.index).dropna()
+                        # Split residuals based on train/val split indices (derived from log series)
+                        train_residuals_111_log = residuals_111_log.loc[train_series_log.index].dropna()
+                        val_residuals_111_log = residuals_111_log.loc[val_series_log.index].dropna()
 
-                        if not train_residuals_111.empty and not val_residuals_111.empty:
-                            print(f"Training LSTM for {model_name_hybrid_111} residuals...")
-                            # Train LSTM on residuals
+                        if not train_residuals_111_log.empty and not val_residuals_111_log.empty:
+                            print(f"Training LSTM for {model_name_hybrid_111} log-residuals...")
+                            # Train LSTM on log-residuals using Hybrid LSTM parameters
                             lstm_resid_111_model, lstm_resid_111_scaler, lstm_resid_111_history = lstm.train_lstm(
-                                train_residuals_111, val_residuals_111 # Pass residuals
+                                train_series=train_residuals_111_log, # Pass log-residuals
+                                val_series=val_residuals_111_log,
+                                # Pass Hybrid LSTM specific parameters from config
+                                window_size=config.LSTM_WINDOW_SIZE,
+                                epochs=config.HYBRID_LSTM_EPOCHS,
+                                batch_size=config.HYBRID_LSTM_BATCH_SIZE,
+                                patience=config.HYBRID_LSTM_PATIENCE,
+                                lstm_units_1=config.HYBRID_LSTM_UNITS_1,
+                                lstm_units_2=config.HYBRID_LSTM_UNITS_2,
+                                dense_units=config.HYBRID_LSTM_DENSE_UNITS,
+                                dropout_rate=config.LSTM_DROPOUT_RATE,
+                                activation='relu', # Explicitly set for Hybrid LSTM
+                                use_recurrent_dropout=False, # Explicitly set for Hybrid LSTM
+                                bidirectional=False, # Ensure Hybrid uses unidirectional
+                                model_name=f"{model_name_hybrid_111}_Residual" # Added model name
                             )
 
-                            if lstm_resid_111_model and lstm_resid_111_scaler:
+                            if lstm_resid_111_model and lstm_resid_111_scaler: # Scaler is for log-residuals
                                 trained_models[model_name_hybrid_111] = {'arima': base_arima_model_111, 'lstm': lstm_resid_111_model, 'scaler': lstm_resid_111_scaler}
-                                if lstm_resid_111_history: plot_loss_curves(lstm_resid_111_history, f"{model_name_hybrid_111} Residual LSTM")
+                                if lstm_resid_111_history: plot_loss_curves(lstm_resid_111_history, f"{model_name_hybrid_111} Residual LSTM") # Loss is on log-residuals
 
-                                # Rolling Forecast - Use the fresh ARIMA model instance
-                                hybrid_111_preds_rolling = hybrid.hybrid_rolling_forecast(train_val_series, test_series, arima_model_for_hybrid_rolling_111, lstm_resid_111_model, lstm_resid_111_scaler)
-                                if hybrid_111_preds_rolling is not None:
-                                    results['Rolling']['Predictions'][model_name_hybrid_111] = hybrid_111_preds_rolling
-                                    metrics_rolling = evaluate_performance(f"{model_name_hybrid_111} (Rolling)", test_series.values, hybrid_111_preds_rolling.values)
+                                # Rolling Forecast - Hybrid still operates on log scale, needs np.exp()
+                                hybrid_111_preds_rolling_log = hybrid.hybrid_rolling_forecast(train_val_series_log, test_series_log, arima_model_for_hybrid_rolling_111, lstm_resid_111_model, lstm_resid_111_scaler)
+                                hybrid_111_preds_rolling_final = np.exp(hybrid_111_preds_rolling_log) if hybrid_111_preds_rolling_log is not None else None
+                                if hybrid_111_preds_rolling_final is not None:
+                                    results['Rolling']['Predictions'][model_name_hybrid_111] = hybrid_111_preds_rolling_final
+                                    metrics_rolling = evaluate_performance(f"{model_name_hybrid_111} (Rolling)", test_series_orig.values, hybrid_111_preds_rolling_final.values)
                                     results['Rolling']['Metrics'][model_name_hybrid_111] = metrics_rolling
                                 else:
                                     print(f"{model_name_hybrid_111} Rolling Forecast failed.")
                                     results['Rolling']['Metrics'][model_name_hybrid_111] = {k: np.nan for k in ["RMSE", "MAPE", "ACC", "R2"]}
 
-                                # Trajectory Forecast - Use the original base ARIMA model
-                                hybrid_111_preds_trajectory = hybrid.hybrid_trajectory_forecast(train_val_series, test_series, base_arima_model_111, lstm_resid_111_model, lstm_resid_111_scaler)
-                                if hybrid_111_preds_trajectory is not None:
-                                    results['Trajectory']['Predictions'][model_name_hybrid_111] = hybrid_111_preds_trajectory
-                                    metrics_trajectory = evaluate_performance(f"{model_name_hybrid_111} (Trajectory)", test_series.values, hybrid_111_preds_trajectory.values)
+                                # Trajectory Forecast - Hybrid still operates on log scale, needs np.exp()
+                                hybrid_111_preds_trajectory_log = hybrid.hybrid_trajectory_forecast(train_val_series_log, test_series_log, base_arima_model_111, lstm_resid_111_model, lstm_resid_111_scaler)
+                                hybrid_111_preds_trajectory_final = np.exp(hybrid_111_preds_trajectory_log) if hybrid_111_preds_trajectory_log is not None else None
+                                if hybrid_111_preds_trajectory_final is not None:
+                                    results['Trajectory']['Predictions'][model_name_hybrid_111] = hybrid_111_preds_trajectory_final
+                                    metrics_trajectory = evaluate_performance(f"{model_name_hybrid_111} (Trajectory)", test_series_orig.values, hybrid_111_preds_trajectory_final.values)
                                     results['Trajectory']['Metrics'][model_name_hybrid_111] = metrics_trajectory
                                 else:
                                     print(f"{model_name_hybrid_111} Trajectory Forecast failed.")
@@ -341,41 +399,58 @@ if __name__ == "__main__":
             if model_name_auto_arima in trained_models:
                 base_auto_arima_model = trained_models[model_name_auto_arima]
                 # Need a fresh model for rolling forecast as pmdarima update() modifies in-place
-                auto_arima_model_for_hybrid_rolling = arima.train_auto_arima(train_val_series) # Retrain
+                auto_arima_model_for_hybrid_rolling = arima.train_auto_arima(train_val_series_log) # Retrain on log-data
 
                 if auto_arima_model_for_hybrid_rolling: # Check if retraining for rolling worked
-                    residuals_auto = arima.calculate_arima_residuals(train_val_series, base_auto_arima_model)
+                    residuals_auto_log = arima.calculate_arima_residuals(train_val_series_log, base_auto_arima_model) # base_auto_arima_model trained on log
 
-                    if residuals_auto is not None:
-                        residuals_auto = residuals_auto.reindex(train_val_series.index).dropna()
-                        train_residuals_auto = residuals_auto.loc[train_series.index].dropna()
-                        val_residuals_auto = residuals_auto.loc[val_series.index].dropna()
+                    if residuals_auto_log is not None:
+                        residuals_auto_log = residuals_auto_log.reindex(train_val_series_log.index).dropna()
+                        train_residuals_auto_log = residuals_auto_log.loc[train_series_log.index].dropna()
+                        val_residuals_auto_log = residuals_auto_log.loc[val_series_log.index].dropna()
 
-                        if not train_residuals_auto.empty and not val_residuals_auto.empty:
-                            print(f"Training LSTM for {model_name_hybrid_auto} residuals...")
+                        if not train_residuals_auto_log.empty and not val_residuals_auto_log.empty:
+                            print(f"Training LSTM for {model_name_hybrid_auto} log-residuals...")
+                            # Train LSTM on log-residuals using Hybrid LSTM parameters
                             lstm_resid_auto_model, lstm_resid_auto_scaler, lstm_resid_auto_history = lstm.train_lstm(
-                                train_residuals_auto, val_residuals_auto # Pass residuals
+                                train_series=train_residuals_auto_log, # Pass log-residuals
+                                val_series=val_residuals_auto_log,
+                                # Pass Hybrid LSTM specific parameters from config
+                                window_size=config.LSTM_WINDOW_SIZE,
+                                epochs=config.HYBRID_LSTM_EPOCHS,
+                                batch_size=config.HYBRID_LSTM_BATCH_SIZE,
+                                patience=config.HYBRID_LSTM_PATIENCE,
+                                lstm_units_1=config.HYBRID_LSTM_UNITS_1,
+                                lstm_units_2=config.HYBRID_LSTM_UNITS_2,
+                                dense_units=config.HYBRID_LSTM_DENSE_UNITS,
+                                dropout_rate=config.LSTM_DROPOUT_RATE,
+                                activation='relu', # Explicitly set for Hybrid LSTM
+                                use_recurrent_dropout=False, # Explicitly set for Hybrid LSTM
+                                bidirectional=False, # Ensure Hybrid uses unidirectional
+                                model_name=f"{model_name_hybrid_auto}_Residual" # Added model name
                             )
 
-                            if lstm_resid_auto_model and lstm_resid_auto_scaler:
+                            if lstm_resid_auto_model and lstm_resid_auto_scaler: # Scaler for log-residuals
                                 trained_models[model_name_hybrid_auto] = {'arima': base_auto_arima_model, 'lstm': lstm_resid_auto_model, 'scaler': lstm_resid_auto_scaler}
-                                if lstm_resid_auto_history: plot_loss_curves(lstm_resid_auto_history, f"{model_name_hybrid_auto} Residual LSTM")
+                                if lstm_resid_auto_history: plot_loss_curves(lstm_resid_auto_history, f"{model_name_hybrid_auto} Residual LSTM") # Loss on log-residuals
 
-                                # Rolling Forecast - Use the fresh Auto ARIMA model instance
-                                hybrid_auto_preds_rolling = hybrid.hybrid_rolling_forecast(train_val_series, test_series, auto_arima_model_for_hybrid_rolling, lstm_resid_auto_model, lstm_resid_auto_scaler)
-                                if hybrid_auto_preds_rolling is not None:
-                                    results['Rolling']['Predictions'][model_name_hybrid_auto] = hybrid_auto_preds_rolling
-                                    metrics_rolling = evaluate_performance(f"{model_name_hybrid_auto} (Rolling)", test_series.values, hybrid_auto_preds_rolling.values)
+                                # Rolling Forecast - Hybrid still operates on log scale, needs np.exp()
+                                hybrid_auto_preds_rolling_log = hybrid.hybrid_rolling_forecast(train_val_series_log, test_series_log, auto_arima_model_for_hybrid_rolling, lstm_resid_auto_model, lstm_resid_auto_scaler)
+                                hybrid_auto_preds_rolling_final = np.exp(hybrid_auto_preds_rolling_log) if hybrid_auto_preds_rolling_log is not None else None
+                                if hybrid_auto_preds_rolling_final is not None:
+                                    results['Rolling']['Predictions'][model_name_hybrid_auto] = hybrid_auto_preds_rolling_final
+                                    metrics_rolling = evaluate_performance(f"{model_name_hybrid_auto} (Rolling)", test_series_orig.values, hybrid_auto_preds_rolling_final.values)
                                     results['Rolling']['Metrics'][model_name_hybrid_auto] = metrics_rolling
                                 else:
                                     print(f"{model_name_hybrid_auto} Rolling Forecast failed.")
                                     results['Rolling']['Metrics'][model_name_hybrid_auto] = {k: np.nan for k in ["RMSE", "MAPE", "ACC", "R2"]}
 
-                                # Trajectory Forecast (use original trained Auto ARIMA)
-                                hybrid_auto_preds_trajectory = hybrid.hybrid_trajectory_forecast(train_val_series, test_series, base_auto_arima_model, lstm_resid_auto_model, lstm_resid_auto_scaler)
-                                if hybrid_auto_preds_trajectory is not None:
-                                    results['Trajectory']['Predictions'][model_name_hybrid_auto] = hybrid_auto_preds_trajectory
-                                    metrics_trajectory = evaluate_performance(f"{model_name_hybrid_auto} (Trajectory)", test_series.values, hybrid_auto_preds_trajectory.values)
+                                # Trajectory Forecast - Hybrid still operates on log scale, needs np.exp()
+                                hybrid_auto_preds_trajectory_log = hybrid.hybrid_trajectory_forecast(train_val_series_log, test_series_log, base_auto_arima_model, lstm_resid_auto_model, lstm_resid_auto_scaler)
+                                hybrid_auto_preds_trajectory_final = np.exp(hybrid_auto_preds_trajectory_log) if hybrid_auto_preds_trajectory_log is not None else None
+                                if hybrid_auto_preds_trajectory_final is not None:
+                                    results['Trajectory']['Predictions'][model_name_hybrid_auto] = hybrid_auto_preds_trajectory_final
+                                    metrics_trajectory = evaluate_performance(f"{model_name_hybrid_auto} (Trajectory)", test_series_orig.values, hybrid_auto_preds_trajectory_final.values)
                                     results['Trajectory']['Metrics'][model_name_hybrid_auto] = metrics_trajectory
                                 else:
                                     print(f"{model_name_hybrid_auto} Trajectory Forecast failed.")
@@ -424,13 +499,13 @@ if __name__ == "__main__":
     # --- Final Results Aggregation and Visualization ---
     print("\n--- Aggregating and Visualizing Results ---")
 
-    # Plot Rolling Forecasts
-    plot_predictions(test_series, results['Rolling']['Predictions'], title_suffix="Rolling Forecast")
+    # Plot Rolling Forecasts - use original scale test series and final predictions
+    plot_predictions(test_series_orig, results['Rolling']['Predictions'], title_suffix="Rolling Forecast")
 
-    # Plot Trajectory Forecasts
-    plot_predictions(test_series, results['Trajectory']['Predictions'], title_suffix="Trajectory Forecast")
+    # Plot Trajectory Forecasts - use original scale test series and final predictions
+    plot_predictions(test_series_orig, results['Trajectory']['Predictions'], title_suffix="Trajectory Forecast")
 
-    # Display Metrics Tables
+    # Display Metrics Tables (metrics were calculated on original scale)
     print("\n--- Rolling Forecast Metrics ---")
     try:
         rolling_metrics_df = pd.DataFrame(results['Rolling']['Metrics']).T.sort_index()

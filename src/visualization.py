@@ -34,7 +34,7 @@ def plot_loss_curves(history, model_name):
     plt.tight_layout()
 
     # Save the plot before showing
-    plot_filename = os.path.join(config.RESULTS_DIR, f'{model_name}_loss_curve.png')
+    plot_filename = os.path.join(config.RESULTS_PLOTS_DIR, f'{model_name}_loss_curve.png') # Use updated variable name
     try:
         # Ensure directory exists (redundant if done at start, but safe)
         os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
@@ -48,50 +48,53 @@ def plot_predictions(test_series_actual, predictions_dict, title_suffix=""):
     """Plots actual vs predicted values for multiple models and saves the plot."""
     print(f"\n[Visualization] Plotting predictions for {title_suffix}...")
     plt.figure(figsize=(14, 7))
-    # Plot actual values using the Series directly (index for x, values for y)
-    plt.plot(test_series_actual.index, test_series_actual.values, label='Actual Adj Close', linewidth=2, color='black') # Make actual stand out
+    # Plot actual values with a distinct style
+    plt.plot(test_series_actual.index, test_series_actual.values, label='Actual Adj Close', color='black', linewidth=2.5, linestyle='-')
 
     test_dates = test_series_actual.index # Get index for potential alignment
 
-    # Define distinct linestyles for better visibility
-    linestyles = ['--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 10)), (0, (1, 10))]
-    style_idx = 0
+    # Define a color cycle for predictions
+    color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color'] # Get default color cycle
+    # Or define custom colors:
+    # color_cycle = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    color_index = 0
 
-    for model_name, preds in predictions_dict.items():
+    # Sort models alphabetically for consistent color assignment (optional but good practice)
+    sorted_model_names = sorted(predictions_dict.keys())
+
+    for model_name in sorted_model_names:
+        preds = predictions_dict[model_name]
         if preds is None: # Skip if predictions failed
-             print(f"Skipping plot for {model_name} due to missing predictions.")
+             print(f"[Visualization] Skipping plot for {model_name} due to missing predictions.")
              continue
 
-        current_linestyle = linestyles[style_idx % len(linestyles)]
-        style_idx += 1
+        # Assign color from cycle
+        current_color = color_cycle[color_index % len(color_cycle)]
+        color_index += 1
 
-        # Handle predictions (Series or ndarray)
+        # Handle predictions (Series or ndarray) - Use SOLID lines for all predictions
         if isinstance(preds, pd.Series):
             valid_preds = preds.dropna()
             if not valid_preds.empty:
-                 # Plot Series using its own index
-                 plt.plot(valid_preds.index, valid_preds.values, label=f'{model_name} Predicted', linestyle=current_linestyle)
+                 plt.plot(valid_preds.index, valid_preds.values, label=f'{model_name} Predicted', linestyle='-', color=current_color, linewidth=1.5) # Solid line
             else:
                  print(f"Warning: No valid (non-NaN) Series predictions to plot for {model_name}.")
         elif isinstance(preds, np.ndarray):
-             # Handle numpy array - plot against test_dates if length matches
              if len(preds) == len(test_dates):
-                 # Drop NaNs from array before plotting
                  valid_mask = ~np.isnan(preds)
                  if np.any(valid_mask):
-                      plt.plot(test_dates[valid_mask], preds[valid_mask], label=f'{model_name} Predicted (Array)', linestyle=current_linestyle)
+                      plt.plot(test_dates[valid_mask], preds[valid_mask], label=f'{model_name} Predicted', linestyle='-', color=current_color, linewidth=1.5) # Solid line
                  else:
                       print(f"Warning: Numpy prediction array contains only NaNs for {model_name}.")
              else:
                  print(f"Warning: Numpy prediction array length mismatch for {model_name}. Cannot plot reliably.")
         else:
-             # Fallback for other types (like lists or previously stored .values)
              try:
                  preds_array = np.array(preds)
                  if preds_array.ndim == 1 and len(preds_array) == len(test_dates):
                       valid_mask = ~np.isnan(preds_array)
                       if np.any(valid_mask):
-                           plt.plot(test_dates[valid_mask], preds_array[valid_mask], label=f'{model_name} Predicted (Fallback)', linestyle=current_linestyle)
+                           plt.plot(test_dates[valid_mask], preds_array[valid_mask], label=f'{model_name} Predicted', linestyle='-', color=current_color, linewidth=1.5) # Solid line
                       else:
                            print(f"Warning: Fallback prediction array contains only NaNs for {model_name}.")
                  else:
@@ -110,7 +113,7 @@ def plot_predictions(test_series_actual, predictions_dict, title_suffix=""):
     # Save the plot before showing
     # Sanitize title_suffix for filename
     safe_suffix = "".join(c if c.isalnum() else "_" for c in title_suffix.lower())
-    plot_filename = os.path.join(config.RESULTS_DIR, f'predictions_{safe_suffix}.png')
+    plot_filename = os.path.join(config.RESULTS_PLOTS_DIR, f'predictions_{safe_suffix}.png') # Use updated variable name
     try:
         # Ensure directory exists (redundant if done at start, but safe)
         os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
@@ -157,7 +160,7 @@ def plot_full_history(df, title="Full Adjusted Close Price History"):
     plt.tight_layout()
 
     # Save the plot before showing
-    plot_filename = os.path.join(config.RESULTS_DIR, 'full_history_plot.png')
+    plot_filename = os.path.join(config.RESULTS_PLOTS_DIR, 'full_history_plot.png') # Use updated variable name
     try:
         os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
         plt.savefig(plot_filename)
