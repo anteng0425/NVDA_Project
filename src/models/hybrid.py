@@ -50,8 +50,8 @@ def hybrid_rolling_forecast(train_val_series, test_series, arima_model, lstm_res
     Returns:
         pd.Series or None: The hybrid rolling forecast predictions, or None if forecasting fails.
     """
-    if not TF_AVAILABLE or arima_model is None or lstm_residual_model is None or lstm_residual_scaler is None:
-        print("[Hybrid Model] Error: Missing prerequisites (TF, models, or scaler) for rolling forecast.")
+    if not TF_AVAILABLE or arima_model is None or lstm_residual_model is None:
+        print("[Hybrid Model] Error: Missing prerequisites (TF, ARIMA model, or LSTM model) for rolling forecast.")
         return None
 
     print(f"\n[Hybrid Model] Starting Hybrid Rolling Forecast for {len(test_series)} steps...")
@@ -70,7 +70,10 @@ def hybrid_rolling_forecast(train_val_series, test_series, arima_model, lstm_res
 
         # Use actual residuals from train_val phase for initial LSTM history
         # Ensure correct shape for scaler
-        scaled_residuals_history = list(lstm_residual_scaler.transform(initial_residuals.values.reshape(-1, 1)).flatten())
+        if lstm_residual_scaler is not None:
+            scaled_residuals_history = list(lstm_residual_scaler.transform(initial_residuals.values.reshape(-1, 1)).flatten())
+        else:
+            scaled_residuals_history = list(initial_residuals.values.flatten())
         price_history = list(train_val_series) # For fallback only if ARIMA prediction fails
         final_predictions = []
         test_index = test_series.index
@@ -116,7 +119,10 @@ def hybrid_rolling_forecast(train_val_series, test_series, arima_model, lstm_res
                  try:
                      lstm_pred_scaled = lstm_residual_model.predict(input_seq_resid, verbose=0)[0][0]
                      # Inverse transform the scaled residual prediction
-                     lstm_pred_resid = lstm_residual_scaler.inverse_transform([[lstm_pred_scaled]])[0][0]
+                     if lstm_residual_scaler is not None:
+                         lstm_pred_resid = lstm_residual_scaler.inverse_transform([[lstm_pred_scaled]])[0][0]
+                     else:
+                         lstm_pred_resid = lstm_pred_scaled # Already in original (residual) scale
                  except Exception as lstm_e:
                      print(f"Warning: LSTM residual prediction failed at step {t}. Type: {type(lstm_e).__name__}. Using 0.")
                      lstm_pred_resid = 0.0
@@ -135,10 +141,13 @@ def hybrid_rolling_forecast(train_val_series, test_series, arima_model, lstm_res
             actual_residual = current_actual - arima_pred
             try:
                 # Scale the actual residual and append to history for next LSTM input
-                scaled_actual_residual = lstm_residual_scaler.transform([[actual_residual]])[0][0]
+                if lstm_residual_scaler is not None:
+                    scaled_actual_residual = lstm_residual_scaler.transform([[actual_residual]])[0][0]
+                else:
+                    scaled_actual_residual = actual_residual # Already in original (residual) scale
                 scaled_residuals_history.append(scaled_actual_residual)
             except Exception as scale_e:
-                 print(f"Warning: Failed to scale actual residual at step {t}. Type: {type(scale_e).__name__}. Appending last known or 0.")
+                 print(f"Warning: Failed to process actual residual at step {t}. Type: {type(scale_e).__name__}. Appending last known or 0.")
                  # Append a fallback value to keep the history length consistent
                  if scaled_residuals_history: scaled_residuals_history.append(scaled_residuals_history[-1])
                  else: scaled_residuals_history.append(0.0)
@@ -188,8 +197,8 @@ def hybrid_trajectory_forecast(train_val_series, test_series, arima_model, lstm_
     Returns:
         pd.Series or None: The hybrid trajectory forecast predictions, or None if forecasting fails.
     """
-    if not TF_AVAILABLE or arima_model is None or lstm_residual_model is None or lstm_residual_scaler is None:
-        print("[Hybrid Model] Error: Missing prerequisites (TF, models, or scaler) for trajectory forecast.")
+    if not TF_AVAILABLE or arima_model is None or lstm_residual_model is None:
+        print("[Hybrid Model] Error: Missing prerequisites (TF, ARIMA model, or LSTM model) for trajectory forecast.")
         return None
 
     test_len = len(test_series)
@@ -213,7 +222,10 @@ def hybrid_trajectory_forecast(train_val_series, test_series, arima_model, lstm_
             print("Failed to calculate initial residuals for hybrid trajectory forecast.")
             return None
         # Ensure correct shape for scaler
-        scaled_initial_residuals = lstm_residual_scaler.transform(initial_residuals.values.reshape(-1, 1)).flatten()
+        if lstm_residual_scaler is not None:
+            scaled_initial_residuals = lstm_residual_scaler.transform(initial_residuals.values.reshape(-1, 1)).flatten()
+        else:
+            scaled_initial_residuals = initial_residuals.values.flatten()
 
         if len(scaled_initial_residuals) < window_size:
              print(f"Error: Not enough initial residuals ({len(scaled_initial_residuals)}) to form LSTM window ({window_size}). Cannot start trajectory.")
@@ -232,7 +244,10 @@ def hybrid_trajectory_forecast(train_val_series, test_series, arima_model, lstm_
                 input_seq_resid = np.array(scaled_residuals_history_window).reshape((1, window_size, 1))
                 lstm_pred_scaled = lstm_residual_model.predict(input_seq_resid, verbose=0)[0][0]
                 # Inverse transform the scaled residual prediction
-                lstm_pred_resid = lstm_residual_scaler.inverse_transform([[lstm_pred_scaled]])[0][0]
+                if lstm_residual_scaler is not None:
+                    lstm_pred_resid = lstm_residual_scaler.inverse_transform([[lstm_pred_scaled]])[0][0]
+                else:
+                    lstm_pred_resid = lstm_pred_scaled # Already in original (residual) scale
             except Exception as lstm_e:
                  print(f"Warning: LSTM residual trajectory prediction failed at step {t}. Type: {type(lstm_e).__name__}. Using 0.")
                  lstm_pred_resid = 0.0

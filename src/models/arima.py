@@ -26,10 +26,8 @@ except ImportError:
     pm = None # Ensure pm is None if import fails
 
 # Import config for default parameters
-try:
-    from .. import config # Relative import from parent directory (src)
-except ImportError:
-    import config # Fallback for direct execution
+# Use relative import assuming execution via `python -m src.main`
+from .. import config # Relative import from parent directory (src)
 
 def train_arima(series, order=(1, 1, 1)):
     """

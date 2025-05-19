@@ -44,7 +44,7 @@ def plot_loss_curves(history, model_name):
         print(f"Error saving loss curve plot: {e}")
     plt.show() # Re-enable interactive plot window
 
-def plot_predictions(test_series_actual, predictions_dict, title_suffix=""):
+def plot_predictions(test_series_actual, predictions_dict, title_suffix="", y_label='Adjusted Close Price'): # Added y_label parameter
     """Plots actual vs predicted values for multiple models and saves the plot."""
     print(f"\n[Visualization] Plotting predictions for {title_suffix}...")
     plt.figure(figsize=(14, 7))
@@ -105,7 +105,7 @@ def plot_predictions(test_series_actual, predictions_dict, title_suffix=""):
 
     plt.title(f'NVDA Stock Price Prediction {title_suffix}')
     plt.xlabel('Date')
-    plt.ylabel('Adjusted Close Price')
+    plt.ylabel(y_label) # Use the y_label parameter
     plt.legend()
     plt.xticks(rotation=45)
     plt.tight_layout()
